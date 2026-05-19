@@ -3,6 +3,7 @@ package main
 import (
 	"LMS-mini-project-backend/internal/config"
 	"LMS-mini-project-backend/internal/handlers"
+	"LMS-mini-project-backend/internal/middleware" // Import the middleware
 	"fmt"
 
 	"github.com/gin-gonic/gin"
@@ -11,24 +12,28 @@ import (
 func main() {
 	fmt.Println("Starting University LMS Backend...")
 
-	// 1. Initialize Database Connection
 	config.ConnectDatabase()
-
-	// 2. Initialize Gin Router
 	router := gin.Default()
 
-	// 3. Setup Routes
-	// Grouping our API versions is a great best practice
-	api := router.Group("/api/v1")
+	// PUBLIC ROUTES (No token required)
+	public := router.Group("/api/v1")
 	{
-		api.GET("/health", func(c *gin.Context) {
+		public.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "Server is running smoothly!"})
 		})
-
-		// The new connection!
-		api.GET("/leave-types", handlers.GetLeaveTypes)
+		public.POST("/register", handlers.Register)
+		public.POST("/login", handlers.Login)
+		public.POST("/forgot-password", handlers.ForgotPassword)
 	}
 
-	// 4. Start the server
+	// PRIVATE ROUTES (Requires a valid Supabase JWT)
+	private := router.Group("/api/v1")
+	private.Use(middleware.RequireAuth()) // Apply the lock here!
+	{
+		// This route is now protected!
+		private.GET("/leave-types", handlers.GetLeaveTypes)
+		private.GET("/me", handlers.GetMe)
+	}
+
 	router.Run(":8080")
 }
