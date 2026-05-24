@@ -71,14 +71,37 @@ func ApplyForLeave(c *gin.Context) {
 	// 6. Run the calculation engine (skipping weekends/holidays based on your DB configurations)
 	calculatedDays := utils.CalculateNetLeaveDays(start, end, leaveType.Name)
 
+	if calculatedDays == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Leave duration calculated to 0 days (e.g., applied only on weekends/holidays)"})
+		return
+	}
+
+	// 6.5 Verify the user has enough balance in their ledger for the current year
+	currentYear := time.Now().Year()
+	var leaveBalance models.LeaveBalance
+
+	if err := config.DB.Where("user_id = ? AND leave_type_id = ? AND year = ?", user.ID, req.LeaveTypeID, currentYear).First(&leaveBalance).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No leave balance allocation found for this year. Please contact HR."})
+		return
+	}
+
+	if float64(calculatedDays) > leaveBalance.RemainingDays {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":          "Insufficient leave balance",
+			"requested_days": calculatedDays,
+			"remaining_days": leaveBalance.RemainingDays,
+		})
+		return
+	}
+
 	// 7. Build the structural database model object
 	newLeave := models.LeaveRequest{
 		ID:             uuid.New(),
-		UserID:         user.ID, // <-- CRITICAL FIX: Using the internal DB UUID, not the Clerk string!
+		UserID:         user.ID,
 		LeaveTypeID:    req.LeaveTypeID,
 		StartDate:      start,
 		EndDate:        end,
-		CalculatedDays: calculatedDays,
+		CalculatedDays: float64(calculatedDays),
 		Reason:         req.Reason,
 		Status:         "PENDING", // Hardcoded starting status
 	}
