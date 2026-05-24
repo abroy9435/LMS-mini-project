@@ -24,14 +24,14 @@ type Department struct {
 
 // User is the core employee profile mapped to Supabase Auth
 type User struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey" json:"id"` // Matches auth.users
-	EmployeeID   string     `gorm:"unique;not null" json:"employee_id"`
-	FirstName    string     `gorm:"not null" json:"first_name"`
-	LastName     string     `gorm:"not null" json:"last_name"`
-	Email        string     `gorm:"unique;not null" json:"email"`
-	DepartmentID *uuid.UUID `gorm:"type:uuid" json:"department_id,omitempty"`
-	RoleID       uuid.UUID  `gorm:"type:uuid;not null" json:"role_id"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ID           uuid.UUID  `gorm:"type:uuid;primaryKey;default:uuid_generate_v4()"`
+	ClerkID      string     `gorm:"type:varchar(255);column:clerk_id;unique"`
+	EmployeeID   string     `gorm:"type:varchar(50);column:employee_id;unique;not null"`
+	FirstName    string     `gorm:"type:varchar(50);column:first_name;not null"`
+	LastName     string     `gorm:"type:varchar(50);column:last_name;not null"`
+	Email        string     `gorm:"type:varchar(255);column:email;unique;not null"`
+	DepartmentID *uuid.UUID `gorm:"type:uuid;column:department_id"`
+	RoleID       uuid.UUID  `gorm:"type:uuid;column:role_id;not null"`
 }
 
 // LeaveType defines rules like Casual Leave vs Earned Leave
@@ -52,20 +52,4 @@ type LeaveBalance struct {
 	AllocatedDays float64   `gorm:"type:numeric(5,1);not null" json:"allocated_days"`
 	UsedDays      float64   `gorm:"type:numeric(5,1);default:0" json:"used_days"`
 	RemainingDays float64   `gorm:"type:numeric(5,1);not null" json:"remaining_days"`
-}
-
-// LeaveRequest handles the actual application transactions
-type LeaveRequest struct {
-	ID              uuid.UUID  `gorm:"type:uuid;default:uuid_generate_v4();primaryKey" json:"id"`
-	UserID          uuid.UUID  `gorm:"type:uuid;not null" json:"user_id"`
-	LeaveTypeID     uuid.UUID  `gorm:"type:uuid;not null" json:"leave_type_id"`
-	StartDate       time.Time  `gorm:"type:date;not null" json:"start_date"`
-	EndDate         time.Time  `gorm:"type:date;not null" json:"end_date"`
-	CalculatedDays  float64    `gorm:"type:numeric(5,1);not null" json:"calculated_days"`
-	Reason          string     `gorm:"not null" json:"reason"`
-	Status          string     `gorm:"default:'PENDING'" json:"status"`
-	ApproverUserID  *uuid.UUID `gorm:"type:uuid" json:"approver_user_id,omitempty"`
-	ApproverRemarks string     `json:"approver_remarks,omitempty"`
-	AppliedAt       time.Time  `json:"applied_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
 }

@@ -1,26 +1,27 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"strings"
 
+	"github.com/clerk/clerk-sdk-go/v2"
+	"github.com/clerk/clerk-sdk-go/v2/jwt"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 )
 
-// RequireAuth is a middleware that validates the Supabase JWT token
+// RequireAuth decodes incoming session tokens securely using the Clerk engine
 func RequireAuth() gin.HandlerFunc {
+	// Inject the secret key from your environment configuration into the Clerk client
+	clerk.SetKey(os.Getenv("CLERK_SECRET_KEY"))
+
 	return func(c *gin.Context) {
-		// 1. Get the Authorization header
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Authorization header is missing"})
 			return
 		}
 
-		// 2. Extract the token from the "Bearer <token>" format
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid authorization header format"})
@@ -28,40 +29,18 @@ func RequireAuth() gin.HandlerFunc {
 		}
 		tokenString := parts[1]
 
-		// 3. Get the secret from the .env file
-		secret := os.Getenv("SUPABASE_JWT_SECRET")
-		if secret == "" {
-			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "JWT secret is not configured on the server"})
-			return
-		}
-
-		// 4. Parse and validate the token
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Validate the signing method
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(secret), nil
+		// Verify the incoming session JWT token seamlessly using Clerk's validation rules
+		claims, err := jwt.Verify(c.Request.Context(), &jwt.VerifyParams{
+			Token: tokenString,
 		})
-
-		if err != nil || !token.Valid {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired token"})
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Invalid or expired Clerk token: " + err.Error()})
 			return
 		}
 
-		// 5. Extract the User ID (Subject) from the token claims
-		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			// Supabase stores the user's UUID in the "sub" (subject) claim
-			userID := claims["sub"].(string)
+		// Inject Clerk's unique user string identifier (e.g., "user_2xxxx") into context
+		c.Set("user_id", claims.Subject)
 
-			// 6. Store the userID in the Gin context so our handlers can use it later!
-			c.Set("user_id", userID)
-		} else {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Failed to extract token claims"})
-			return
-		}
-
-		// 7. If everything is good, pass control to the next function (the actual route handler)
 		c.Next()
 	}
 }

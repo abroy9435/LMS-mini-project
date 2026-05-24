@@ -21,18 +21,17 @@ func main() {
 		public.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "Server is running smoothly!"})
 		})
-		public.POST("/register", handlers.Register)
-		public.POST("/login", handlers.Login)
-		public.POST("/forgot-password", handlers.ForgotPassword)
+
 	}
 
 	// PRIVATE ROUTES (Requires a valid Supabase JWT)
 	private := router.Group("/api/v1")
 	private.Use(middleware.RequireAuth()) // Apply the lock here!
 	{
-		// This route is now protected!
+		private.POST("/profile", handlers.CreateProfile)
 		private.GET("/leave-types", handlers.GetLeaveTypes)
 		private.GET("/me", handlers.GetMe)
+		private.POST("/leaves", handlers.ApplyForLeave)
 	}
 
 	router.Run(":8080")
