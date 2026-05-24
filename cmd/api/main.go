@@ -32,6 +32,7 @@ func main() {
 		private.GET("/leave-types", handlers.GetLeaveTypes)
 		private.GET("/me", handlers.GetMe)
 		private.POST("/leaves", handlers.ApplyForLeave)
+		private.PUT("/leaves/:id/status", handlers.UpdateLeaveStatus)
 	}
 
 	router.Run(":8080")

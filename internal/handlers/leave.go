@@ -137,3 +137,102 @@ func GetLeaveTypes(c *gin.Context) {
 		"data": leaveTypes,
 	})
 }
+
+type UpdateLeaveStatusRequest struct {
+	Status  string `json:"status" binding:"required"` // 'APPROVED' or 'REJECTED'
+	Remarks string `json:"remarks"`
+}
+
+// UpdateLeaveStatus handles HOD/Admin approvals and balance deductions
+func UpdateLeaveStatus(c *gin.Context) {
+	leaveID := c.Param("id") // The UUID of the specific leave request in the URL
+	var req UpdateLeaveStatusRequest
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+
+	// 1. Validate the status
+	if req.Status != "APPROVED" && req.Status != "REJECTED" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Status must be APPROVED or REJECTED"})
+		return
+	}
+
+	// 2. Identify the Approver (The HOD/Admin making the request)
+	clerkID, _ := c.Get("user_id")
+	var approver models.User
+	if err := config.DB.Where("clerk_id = ?", clerkID.(string)).First(&approver).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Approver profile not found"})
+		return
+	}
+
+	// 3. Start a Database Transaction (Crucial for data integrity)
+	tx := config.DB.Begin()
+
+	// 4. Fetch the existing Leave Request
+	var leaveRequest models.LeaveRequest
+	if err := tx.First(&leaveRequest, "id = ?", leaveID).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusNotFound, gin.H{"error": "Leave request not found"})
+		return
+	}
+
+	// 5. Check if it's already been processed
+	if leaveRequest.Status != "PENDING" {
+		tx.Rollback()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "This leave request has already been processed"})
+		return
+	}
+
+	// 6. If APPROVED, deduct the balance
+	if req.Status == "APPROVED" {
+		currentYear := time.Now().Year()
+		var balance models.LeaveBalance
+
+		// Find the applicant's balance for this specific leave type
+		if err := tx.Where("user_id = ? AND leave_type_id = ? AND year = ?", leaveRequest.UserID, leaveRequest.LeaveTypeID, currentYear).First(&balance).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not find applicant's leave balance record"})
+			return
+		}
+
+		// Double-check they still have enough days (in case of concurrent approvals)
+		if leaveRequest.CalculatedDays > balance.RemainingDays {
+			tx.Rollback()
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Applicant no longer has enough balance for this approval"})
+			return
+		}
+
+		// Do the math: Subtract from remaining, add to used
+		balance.RemainingDays -= leaveRequest.CalculatedDays
+		balance.UsedDays += leaveRequest.CalculatedDays
+
+		// Save the updated balance
+		if err := tx.Save(&balance).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update leave balance ledger"})
+			return
+		}
+	}
+
+	// 7. Update the Leave Request record itself
+	leaveRequest.Status = req.Status
+	leaveRequest.ApproverUserID = &approver.ID
+	leaveRequest.ApproverRemarks = req.Remarks
+	leaveRequest.UpdatedAt = time.Now()
+
+	if err := tx.Save(&leaveRequest).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update leave status"})
+		return
+	}
+
+	// 8. Commit the transaction! (If we get here, both the deduction and status update were successful)
+	tx.Commit()
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Leave request successfully " + req.Status,
+		"status":  req.Status,
+	})
+}
