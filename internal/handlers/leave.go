@@ -236,3 +236,66 @@ func UpdateLeaveStatus(c *gin.Context) {
 		"status":  req.Status,
 	})
 }
+
+// GetPendingLeaves fetches requests requiring approval by the current HOD
+func GetPendingLeaves(c *gin.Context) {
+	clerkID, _ := c.Get("user_id")
+	var approver models.User
+
+	if err := config.DB.Where("clerk_id = ?", clerkID.(string)).First(&approver).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Approver profile not found"})
+		return
+	}
+
+	var pendingRequests []models.LeaveRequest
+
+	// Preload the User and LeaveType data so the frontend can display names!
+	query := config.DB.Preload("User").Preload("LeaveType").Where("leave_requests.status = ?", "PENDING")
+
+	// If the approver belongs to a specific department, only show them requests from their faculty
+	if approver.DepartmentID != nil {
+		query = query.Joins("JOIN users ON users.id = leave_requests.user_id").
+			Where("users.department_id = ?", approver.DepartmentID)
+	}
+
+	if err := query.Find(&pendingRequests).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch inbox"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": pendingRequests})
+}
+
+// GetMyLeaves fetches the personal leave history for the logged-in user
+func GetMyLeaves(c *gin.Context) {
+	clerkID, _ := c.Get("user_id")
+	var user models.User
+	config.DB.Where("clerk_id = ?", clerkID.(string)).First(&user)
+
+	var myLeaves []models.LeaveRequest
+
+	// Order by most recently applied first
+	if err := config.DB.Preload("LeaveType").Preload("Approver").Where("user_id = ?", user.ID).Order("applied_at desc").Find(&myLeaves).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": myLeaves})
+}
+
+// GetMyBalances fetches the remaining leave quotas for the current year
+func GetMyBalances(c *gin.Context) {
+	clerkID, _ := c.Get("user_id")
+	var user models.User
+	config.DB.Where("clerk_id = ?", clerkID.(string)).First(&user)
+
+	var balances []models.LeaveBalance
+	currentYear := time.Now().Year()
+
+	if err := config.DB.Where("user_id = ? AND year = ?", user.ID, currentYear).Find(&balances).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch balances"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"data": balances})
+}

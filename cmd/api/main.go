@@ -33,6 +33,10 @@ func main() {
 		private.GET("/me", handlers.GetMe)
 		private.POST("/leaves", handlers.ApplyForLeave)
 		private.PUT("/leaves/:id/status", handlers.UpdateLeaveStatus)
+		private.GET("/leaves/pending", handlers.GetPendingLeaves)
+		private.GET("/leaves/me", handlers.GetMyLeaves)
+		private.GET("/balances/me", handlers.GetMyBalances)
+		private.POST("/admin/allocate-leaves", handlers.AllocateYearlyLeaves)
 	}
 
 	router.Run(":8080")
