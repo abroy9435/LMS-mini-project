@@ -5,7 +5,10 @@ import (
 	"LMS-mini-project-backend/internal/handlers"
 	"LMS-mini-project-backend/internal/middleware" // Import the middleware
 	"fmt"
+	"os"
+	"time"
 
+	"github.com/gin-contrib/cors" // 1. Import the Gin CORS package
 	"github.com/gin-gonic/gin"
 )
 
@@ -15,6 +18,16 @@ func main() {
 	config.ConnectDatabase()
 	router := gin.Default()
 
+	// 2. Configure and attach the CORS middleware
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173"}, // Allow your React Vite app
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour, // Cache the preflight request for 12 hours
+	}))
+
 	// PUBLIC ROUTES (No token required)
 	public := router.Group("/api/v1")
 	{
@@ -22,6 +35,7 @@ func main() {
 			c.JSON(200, gin.H{"status": "Server is running smoothly!"})
 		})
 
+		public.POST("/webhooks/clerk", handlers.HandleClerkWebhook)
 	}
 
 	// PRIVATE ROUTES (Requires a valid Supabase JWT)
@@ -31,13 +45,18 @@ func main() {
 		private.POST("/profile", handlers.CreateProfile)
 		private.GET("/leave-types", handlers.GetLeaveTypes)
 		private.GET("/me", handlers.GetMe)
-		private.POST("/leaves", handlers.ApplyForLeave)
-		private.PUT("/leaves/:id/status", handlers.UpdateLeaveStatus)
+		private.POST("/leaves", middleware.RequireAuth(), handlers.ApplyForLeave)
+		private.PUT("/leaves/:id/status", middleware.RequireAuth(), middleware.RequireRole("APPROVER", "ADMIN"), handlers.UpdateLeaveStatus)
 		private.GET("/leaves/pending", handlers.GetPendingLeaves)
 		private.GET("/leaves/me", handlers.GetMyLeaves)
 		private.GET("/balances/me", handlers.GetMyBalances)
 		private.POST("/admin/allocate-leaves", handlers.AllocateYearlyLeaves)
+		private.PUT("/admin/assign-role", middleware.RequireAuth(), middleware.RequireRole("ADMIN"), handlers.AssignRole)
 	}
 
-	router.Run(":8080")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Default for local development
+	}
+	router.Run(":" + port)
 }

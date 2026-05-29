@@ -32,6 +32,7 @@ type User struct {
 	Email        string     `gorm:"type:varchar(255);column:email;unique;not null"`
 	DepartmentID *uuid.UUID `gorm:"type:uuid;column:department_id"`
 	RoleID       uuid.UUID  `gorm:"type:uuid;column:role_id;not null"`
+	Role         Role       `gorm:"foreignKey:RoleID" json:"role"`
 }
 
 // LeaveType defines rules like Casual Leave vs Earned Leave

@@ -8,7 +8,13 @@ import (
 	"LMS-mini-project-backend/internal/models"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
+
+type AssignRoleRequest struct {
+	UserID   uuid.UUID `json:"user_id" binding:"required"`
+	RoleName string    `json:"role_name" binding:"required"`
+}
 
 // AllocateYearlyLeaves distributes the default leave quotas to all users for the current year
 func AllocateYearlyLeaves(c *gin.Context) {
@@ -60,5 +66,32 @@ func AllocateYearlyLeaves(c *gin.Context) {
 		"message":             "Yearly leave allocation completed successfully!",
 		"year":                currentYear,
 		"allocations_created": allocationsCreated,
+	})
+}
+
+// AssignRole allows a System Administrator to promote/demote users
+func AssignRole(c *gin.Context) {
+	var req AssignRoleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid input"})
+		return
+	}
+
+	// 1. Verify the requested Role actually exists in the database
+	var newRole models.Role
+	if err := config.DB.Where("name = ?", req.RoleName).First(&newRole).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Role does not exist in the system"})
+		return
+	}
+
+	// 2. Update the user's role_id
+	if err := config.DB.Model(&models.User{}).Where("id = ?", req.UserID).Update("role_id", newRole.ID).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user role"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "User role updated successfully",
+		"new_role": req.RoleName,
 	})
 }
