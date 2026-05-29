@@ -56,7 +56,8 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // Default for local development
+		port = "7860"
 	}
-	router.Run(":" + port)
+
+	router.Run("0.0.0.0:" + port)
 }
