@@ -25,5 +25,4 @@ COPY --from=builder /app/lms-backend .
 # Hugging Face Spaces route traffic to port 7860 by default
 EXPOSE 7860
 
-# Command to run the executable
 CMD ["./lms-backend"]
